@@ -1,5 +1,5 @@
 cd backend
-uvicorn main:app --reload
+uvicorn server:app --reload
 
 cd frontend
 npm start
@@ -13,3 +13,6 @@ git commit -m "first commit"
 git branch -M main
 git remote add origin https://github.com/pongdang-1/golf_web.git
 git push -u origin main
+
+127.0.0.1:3000
+

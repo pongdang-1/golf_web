@@ -8,11 +8,15 @@
 </head>
 <body>
     <h1>⛳ 골프 그린 좌표 표시</h1>
-    <div style="margin-bottom: 10px;">
+    <div id="clearAllWrapper" style="margin-bottom: 10px;">
         <button onclick="clearAllCoordinates()">전체 초기화</button>
     </div>
     <div id="imageList"></div>
-    <canvas id="greenCanvas" width="600" height="400"></canvas>
+    <div id="canvasWrapper" class="canvas-wrapper" style="display: none;">
+        <button class="nav-button prev-nav" onclick="goPrevGreen()">◀ 이전</button>
+        <canvas id="greenCanvas" width="600" height="400"></canvas>
+        <button class="nav-button next-nav" onclick="goNextGreen()">다음 ▶</button>
+    </div>
     <!-- 가상 마우스 패널: 사진(캔버스) 바로 아래 -->
     <div id="virtualMouseWrapper" class="virtual-mouse-wrapper">
         <div class="virtual-mouse-title">가상 마우스 패널 (드래그해서 점 이동)</div>
@@ -23,10 +27,10 @@
     <div class="controls">
         <div class="info">이미지를 선택한 후 점 생성 버튼을 누르면 캔버스 중앙에 점이 생성됩니다</div>
         <div>
-            <button onclick="goBack()">뒤로 가기</button>
-            <button onclick="clearCanvas()">초기화</button>
-            <button onclick="deleteSelectedPoint()">선택된 점 삭제</button>
             <button id="createPointButton" onclick="createCenterPoint()">점 생성</button>
+            <button onclick="deleteSelectedPoint()">점 삭제</button>
+            <button onclick="clearCanvas()">초기화</button>
+            <button onclick="goBack()">뒤로 가기</button>
         </div>
         <!-- 조이스틱 제거, 가상 마우스 패널은 캔버스 아래로 이동 -->
     </div>
@@ -47,33 +51,17 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
             selectedIndex = getPointIndex(x, y);
-            redrawCanvas();
+                redrawCanvas();
             syncVirtualMouseWithSelectedPoint();
         });
 
-        canvas.addEventListener('dblclick', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = (e.clientX - rect.left) * scaleX;
-            const y = (e.clientY - rect.top) * scaleY;
-            const index = getPointIndex(x, y);
-            if (index !== -1) {
-                coordinates.splice(index, 1);
-                selectedIndex = -1;
-                redrawCanvas();
-                // 더블클릭으로 점 삭제 시 자동 저장
-                if (currentImage) {
-                    saveCoordinates(currentImage, coordinates);
-                }
-            }
-        });
-
         function getPointIndex(x, y) {
+            // 폰에서도 터치 인식이 잘 되도록 실제 점 반지름(10)보다 넉넉하게 감지
+            const hitRadius = 20;
             for (let i = 0; i < coordinates.length; i++) {
                 const dx = x - coordinates[i].x;
                 const dy = y - coordinates[i].y;
-                if (Math.sqrt(dx * dx + dy * dy) < 10) {
+                if (Math.sqrt(dx * dx + dy * dy) < hitRadius) {
                     return i;
                 }
             }
@@ -81,14 +69,31 @@
         }
 
         function drawPoint(x, y, isSelected, index) {
+            const r = 10; // 점 반지름 (2배)
+            // 점 그리기
             ctx.fillStyle = isSelected ? '#0000ff' : '#ff0000';
             ctx.beginPath();
-            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.arc(x, y, r, 0, Math.PI * 2);
             ctx.fill();
+
+            // 텍스트 스타일
             ctx.fillStyle = '#000000';
             ctx.font = '12px Arial';
-            ctx.fillText(`(${Math.round(x)}, ${Math.round(y)})`, x - 20, y - 15);
-            ctx.fillText(`${index + 1}`, x - 5, y + 15);
+            const originalAlign = ctx.textAlign;
+            const originalBaseline = ctx.textBaseline;
+            ctx.textAlign = 'center';
+
+            // 위: 좌표 텍스트 (점 크기에 맞춰 위로 띄우기)
+            ctx.textBaseline = 'bottom';
+            ctx.fillText(`(${Math.round(x)}, ${Math.round(y)})`, x, y - r - 4);
+
+            // 아래: 순서 번호 텍스트 (점 크기에 맞춰 아래로 띄우기)
+            ctx.textBaseline = 'top';
+            ctx.fillText(`${index + 1}`, x, y + r + 4);
+
+            // 원래 설정 복원
+            ctx.textAlign = originalAlign;
+            ctx.textBaseline = originalBaseline;
         }
 
         function redrawCanvas() {
@@ -111,7 +116,7 @@
                 await saveCoordinates(currentImage, coordinates);
             }
         }
-        
+
         async function deleteSelectedPoint() {
             if (selectedIndex !== -1) {
                 coordinates.splice(selectedIndex, 1);
@@ -167,30 +172,81 @@
             const cursor = document.getElementById('virtualMouseCursor');
             if (!panel || !cursor) return;
 
+            // 마우스 이벤트 (데스크톱)
             panel.addEventListener('mousedown', (e) => {
+                e.preventDefault();
                 const rect = panel.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
                 isVirtualMouseDragging = true;
-                moveVirtualMouseAndPoint(x, y);
+                moveVirtualMouseAndPoint(x, y, false); // 드래그 시작, 저장 안 함
             });
 
             window.addEventListener('mousemove', (e) => {
                 if (!isVirtualMouseDragging) return;
+                e.preventDefault();
                 const panel = document.getElementById('virtualMousePanel');
                 if (!panel) return;
                 const rect = panel.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
-                moveVirtualMouseAndPoint(x, y);
+                moveVirtualMouseAndPoint(x, y, false); // 드래그 중, 저장 안 함
             });
 
-            window.addEventListener('mouseup', () => {
+            window.addEventListener('mouseup', (e) => {
+                if (isVirtualMouseDragging) {
+                    // 손을 놓았을 때 최종 위치를 서버에 저장
+                    const panel = document.getElementById('virtualMousePanel');
+                    if (panel) {
+                        const rect = panel.getBoundingClientRect();
+                        const x = e.clientX - rect.left;
+                        const y = e.clientY - rect.top;
+                        moveVirtualMouseAndPoint(x, y, true); // shouldSave = true
+                    }
+                }
+                isVirtualMouseDragging = false;
+            });
+
+            // 터치 이벤트 (모바일)
+            panel.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const rect = panel.getBoundingClientRect();
+                const touch = e.touches[0];
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                isVirtualMouseDragging = true;
+                moveVirtualMouseAndPoint(x, y, false); // 드래그 시작, 저장 안 함
+            });
+
+            window.addEventListener('touchmove', (e) => {
+                if (!isVirtualMouseDragging) return;
+                e.preventDefault();
+                const panel = document.getElementById('virtualMousePanel');
+                if (!panel) return;
+                const rect = panel.getBoundingClientRect();
+                const touch = e.touches[0];
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                moveVirtualMouseAndPoint(x, y, false); // 드래그 중, 저장 안 함
+            });
+
+            window.addEventListener('touchend', (e) => {
+                if (isVirtualMouseDragging) {
+                    // 손을 놓았을 때 최종 위치를 서버에 저장
+                    const panel = document.getElementById('virtualMousePanel');
+                    if (panel && e.changedTouches && e.changedTouches.length > 0) {
+                        const rect = panel.getBoundingClientRect();
+                        const touch = e.changedTouches[0];
+                        const x = touch.clientX - rect.left;
+                        const y = touch.clientY - rect.top;
+                        moveVirtualMouseAndPoint(x, y, true); // shouldSave = true
+                    }
+                }
                 isVirtualMouseDragging = false;
             });
         }
 
-        function moveVirtualMouseAndPoint(panelX, panelY) {
+        function moveVirtualMouseAndPoint(panelX, panelY, shouldSave = false) {
             const panel = document.getElementById('virtualMousePanel');
             const cursor = document.getElementById('virtualMouseCursor');
             if (!panel || !cursor) return;
@@ -216,7 +272,9 @@
             point.x = canvasX;
             point.y = canvasY;
             redrawCanvas();
-            if (currentImage) {
+
+            // 손을 놓았을 때만 서버에 저장
+            if (shouldSave && currentImage) {
                 saveCoordinates(currentImage, coordinates);
             }
         }
@@ -248,7 +306,9 @@
             canvas.style.display = 'none';
             document.querySelector('.controls').style.display = 'none';
             document.getElementById('virtualMouseWrapper').style.display = 'none';
+            document.getElementById('canvasWrapper').style.display = 'none';
             document.getElementById('imageList').style.display = 'flex';
+            document.getElementById('clearAllWrapper').style.display = 'block';
         }
 
         async function loadCoordinates(image) {
@@ -298,84 +358,120 @@
             }
         }
 
+        function loadGreenByIndex(index) {
+            if (index < 0 || index >= imageFiles.length) {
+                return;
+            }
+            const file = imageFiles[index];
+            (async () => {
+                // 현재 좌표 저장
+                if (currentImage) {
+                    await saveCoordinates(currentImage, coordinates);
+                }
+                // 새 이미지 설정
+                currentImage = file;
+                img.src = `image/${file}`;
+                img.onload = () => {
+                    loadCoordinates(file).then(coords => {
+                        coordinates.length = 0;
+                        coordinates.push(...coords);
+                        selectedIndex = -1;
+                        redrawCanvas();
+                        syncVirtualMouseWithSelectedPoint();
+                        // UI 전환
+                        document.getElementById('imageList').style.display = 'none';
+                        document.getElementById('clearAllWrapper').style.display = 'none';
+                        document.getElementById('canvasWrapper').style.display = 'block';
+                        canvas.style.display = 'block';
+                        document.getElementById('virtualMouseWrapper').style.display = 'block';
+                        document.querySelector('.controls').style.display = 'flex';
+                    });
+                };
+            })();
+        }
+
+        function goPrevGreen() {
+            if (!currentImage) {
+                alert('먼저 그린을 선택하세요.');
+                return;
+            }
+            const idx = imageFiles.indexOf(currentImage);
+            if (idx <= 0) {
+                alert('첫 번째 그린입니다.');
+                return;
+            }
+            loadGreenByIndex(idx - 1);
+        }
+
+        function goNextGreen() {
+            if (!currentImage) {
+                alert('먼저 그린을 선택하세요.');
+                return;
+            }
+            const idx = imageFiles.indexOf(currentImage);
+            if (idx >= imageFiles.length - 1) {
+                alert('마지막 그린입니다.');
+                return;
+            }
+            loadGreenByIndex(idx + 1);
+        }
+
         function createImageList() {
             const listDiv = document.getElementById('imageList');
+            listDiv.innerHTML = '';
+
             const aspects = [];
+            const allImgElements = [];
             let loadedCount = 0;
+
+            // Lake / Hill 그리드 컨테이너 (제목 없이 3x3만 표시)
+            const lakeGrid = document.createElement('div');
+            lakeGrid.className = 'image-grid';
+
+            const hillGrid = document.createElement('div');
+            hillGrid.className = 'image-grid';
 
             imageFiles.forEach((file, index) => {
                 const container = document.createElement('div');
-                container.style.position = 'relative';
-                container.style.display = 'inline-block';
-                container.style.margin = '10px';
+                container.className = 'image-item';
 
                 const imgElement = document.createElement('img');
                 imgElement.src = `image/${file}`;
+                allImgElements.push(imgElement);
                 imgElement.onload = () => {
                     const aspect = imgElement.naturalWidth / imgElement.naturalHeight;
                     aspects[index] = aspect;
                     loadedCount++;
                     if (loadedCount === imageFiles.length) {
                         const maxAspect = Math.max(...aspects);
-                        imageFiles.forEach((file, i) => {
-                            const img = listDiv.children[i].querySelector('img');
+                        allImgElements.forEach(img => {
                             img.style.aspectRatio = maxAspect;
                         });
                     }
                 };
-                imgElement.style.width = 'auto';
-                imgElement.style.height = '80px';
-                imgElement.style.objectFit = 'contain';
-                imgElement.style.border = '2px solid #ddd';
-                imgElement.style.borderRadius = '8px';
-                imgElement.style.cursor = 'pointer';
-                imgElement.style.transition = 'border-color 0.3s';
                 imgElement.onmouseover = () => imgElement.style.borderColor = '#2d5016';
                 imgElement.onmouseout = () => imgElement.style.borderColor = '#ddd';
-                imgElement.onclick = async () => {
-                    // 현재 좌표 저장
-                    if (currentImage) {
-                        await saveCoordinates(currentImage, coordinates);
-                    }
-                    // 새 이미지 설정
-                    currentImage = file;
-                    img.src = `image/${file}`;
-                    img.onload = () => {
-                        loadCoordinates(file).then(coords => {
-                            coordinates.length = 0;
-                            coordinates.push(...coords);
-                            selectedIndex = -1;
-                            redrawCanvas();
-                            syncVirtualMouseWithSelectedPoint();
-                            // UI 전환
-                            document.getElementById('imageList').style.display = 'none';
-                            canvas.style.display = 'block';
-                            document.getElementById('virtualMouseWrapper').style.display = 'block';
-                            document.querySelector('.controls').style.display = 'flex';
-                        });
-                    };
+                imgElement.onclick = () => {
+                    loadGreenByIndex(index);
                 };
                 container.appendChild(imgElement);
 
                 // 이름 추가 (이미지 위에 오버레이)
                 const nameElement = document.createElement('p');
                 const greenNumber = index + 1;
-                nameElement.textContent = index < 9 ? `Lake ${greenNumber}` : `Hill ${greenNumber}`;
-                nameElement.style.position = 'absolute';
-                nameElement.style.top = '5px';
-                nameElement.style.left = '50%';
-                nameElement.style.transform = 'translateX(-50%)';
-                nameElement.style.color = 'white';
-                nameElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-                nameElement.style.padding = '2px 5px';
-                nameElement.style.borderRadius = '4px';
-                nameElement.style.fontSize = '12px';
-                nameElement.style.fontWeight = 'bold';
-                nameElement.style.margin = '0';
+                nameElement.textContent = index < 9 ? `레이크 ${greenNumber}번` : `힐 ${greenNumber}번`;
+                nameElement.className = 'image-label';
                 container.appendChild(nameElement);
 
-                listDiv.appendChild(container);
+                if (index < 9) {
+                    lakeGrid.appendChild(container);
+                } else {
+                    hillGrid.appendChild(container);
+                }
             });
+
+            listDiv.appendChild(lakeGrid);
+            listDiv.appendChild(hillGrid);
         }
 
         createImageList();
