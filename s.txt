@@ -1,0 +1,15 @@
+cd backend
+uvicorn main:app --reload
+
+cd frontend
+npm start
+
+git config user.name "pongdang-1"
+git config user.email "yoppa1112@gmail.com"
+
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin https://github.com/pongdang-1/golf_web.git
+git push -u origin main

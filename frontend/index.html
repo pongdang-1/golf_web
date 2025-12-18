@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Golf Green Coordinator</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <h1>⛳ 골프 그린 좌표 표시</h1>
+    <div style="margin-bottom: 10px;">
+        <button onclick="clearAllCoordinates()">전체 초기화</button>
+    </div>
+    <div id="imageList"></div>
+    <canvas id="greenCanvas" width="600" height="400"></canvas>
+    <!-- 가상 마우스 패널: 사진(캔버스) 바로 아래 -->
+    <div id="virtualMouseWrapper" class="virtual-mouse-wrapper">
+        <div class="virtual-mouse-title">가상 마우스 패널 (드래그해서 점 이동)</div>
+        <div id="virtualMousePanel" class="virtual-mouse-panel">
+            <div id="virtualMouseCursor" class="virtual-mouse-cursor"></div>
+        </div>
+    </div>
+    <div class="controls">
+        <div class="info">이미지를 선택한 후 점 생성 버튼을 누르면 캔버스 중앙에 점이 생성됩니다</div>
+        <div>
+            <button onclick="goBack()">뒤로 가기</button>
+            <button onclick="clearCanvas()">초기화</button>
+            <button onclick="deleteSelectedPoint()">선택된 점 삭제</button>
+            <button id="createPointButton" onclick="createCenterPoint()">점 생성</button>
+        </div>
+        <!-- 조이스틱 제거, 가상 마우스 패널은 캔버스 아래로 이동 -->
+    </div>
+    
+    <script>
+        const canvas = document.getElementById('greenCanvas');
+        const ctx = canvas.getContext('2d');
+        const coordinates = [];
+        let selectedIndex = -1;
+        const img = new Image();
+        const imageFiles = ['1.jpg', '2.jpg', '3.JPG', '4.JPG', '5.JPG', '6.JPG', '7.JPG', '8.JPG', '9.JPG', '10.JPG', '11.JPG', '12.JPG', '13.JPG', '14.JPG', '15.JPG', '16.JPG', '17.JPG', '18.JPG'];
+        let currentImage = null;
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            selectedIndex = getPointIndex(x, y);
+            redrawCanvas();
+            syncVirtualMouseWithSelectedPoint();
+        });
+
+        canvas.addEventListener('dblclick', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            const index = getPointIndex(x, y);
+            if (index !== -1) {
+                coordinates.splice(index, 1);
+                selectedIndex = -1;
+                redrawCanvas();
+                // 더블클릭으로 점 삭제 시 자동 저장
+                if (currentImage) {
+                    saveCoordinates(currentImage, coordinates);
+                }
+            }
+        });
+
+        function getPointIndex(x, y) {
+            for (let i = 0; i < coordinates.length; i++) {
+                const dx = x - coordinates[i].x;
+                const dy = y - coordinates[i].y;
+                if (Math.sqrt(dx * dx + dy * dy) < 10) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        function drawPoint(x, y, isSelected, index) {
+            ctx.fillStyle = isSelected ? '#0000ff' : '#ff0000';
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000000';
+            ctx.font = '12px Arial';
+            ctx.fillText(`(${Math.round(x)}, ${Math.round(y)})`, x - 20, y - 15);
+            ctx.fillText(`${index + 1}`, x - 5, y + 15);
+        }
+
+        function redrawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (img.complete) {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
+            coordinates.forEach((coord, index) => {
+                drawPoint(coord.x, coord.y, index === selectedIndex, index);
+            });
+        }
+
+        async function clearCanvas() {
+            coordinates.length = 0;
+            selectedIndex = -1;
+            redrawCanvas();
+            syncVirtualMouseWithSelectedPoint();
+            // 초기화 시 DB에도 즉시 반영
+            if (currentImage) {
+                await saveCoordinates(currentImage, coordinates);
+            }
+        }
+        
+        async function deleteSelectedPoint() {
+            if (selectedIndex !== -1) {
+                coordinates.splice(selectedIndex, 1);
+                selectedIndex = -1;
+                redrawCanvas();
+                syncVirtualMouseWithSelectedPoint();
+                // 선택된 점 삭제 후 DB에도 즉시 반영
+                if (currentImage) {
+                    await saveCoordinates(currentImage, coordinates);
+                }
+            }
+        }
+
+        function createCenterPoint() {
+            if (!currentImage) {
+                alert('먼저 이미지를 선택하세요.');
+                return;
+            }
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+            coordinates.push({ x: centerX, y: centerY });
+            // 방금 생성된 점을 자동 선택
+            selectedIndex = coordinates.length - 1;
+            redrawCanvas();
+            syncVirtualMouseWithSelectedPoint();
+            if (currentImage) {
+                saveCoordinates(currentImage, coordinates);
+            }
+        }
+
+        function nudgeSelectedPoint(dx, dy) {
+            if (selectedIndex === -1) return;
+            const point = coordinates[selectedIndex];
+            let newX = point.x + dx;
+            let newY = point.y + dy;
+            // 캔버스 범위 안으로 제한
+            newX = Math.max(0, Math.min(canvas.width, newX));
+            newY = Math.max(0, Math.min(canvas.height, newY));
+            point.x = newX;
+            point.y = newY;
+            redrawCanvas();
+            syncVirtualMouseWithSelectedPoint();
+            if (currentImage) {
+                saveCoordinates(currentImage, coordinates);
+            }
+        }
+        
+        // 가상 마우스 패널 로직
+        let isVirtualMouseDragging = false;
+
+        function initVirtualMousePanel() {
+            const panel = document.getElementById('virtualMousePanel');
+            const cursor = document.getElementById('virtualMouseCursor');
+            if (!panel || !cursor) return;
+
+            panel.addEventListener('mousedown', (e) => {
+                const rect = panel.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                isVirtualMouseDragging = true;
+                moveVirtualMouseAndPoint(x, y);
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isVirtualMouseDragging) return;
+                const panel = document.getElementById('virtualMousePanel');
+                if (!panel) return;
+                const rect = panel.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                moveVirtualMouseAndPoint(x, y);
+            });
+
+            window.addEventListener('mouseup', () => {
+                isVirtualMouseDragging = false;
+            });
+        }
+
+        function moveVirtualMouseAndPoint(panelX, panelY) {
+            const panel = document.getElementById('virtualMousePanel');
+            const cursor = document.getElementById('virtualMouseCursor');
+            if (!panel || !cursor) return;
+
+            const rect = panel.getBoundingClientRect();
+            // 패널 안으로 좌표 클램프
+            let x = Math.max(0, Math.min(rect.width, panelX));
+            let y = Math.max(0, Math.min(rect.height, panelY));
+
+            // 커서 위치 갱신 (중심 보정)
+            const cursorSize = 14;
+            cursor.style.left = `${x - cursorSize / 2}px`;
+            cursor.style.top = `${y - cursorSize / 2}px`;
+
+            // 선택된 점이 있을 때만 점 이동
+            if (selectedIndex === -1) return;
+
+            // 패널 좌표를 캔버스 좌표로 매핑
+            const canvasX = (x / rect.width) * canvas.width;
+            const canvasY = (y / rect.height) * canvas.height;
+
+            const point = coordinates[selectedIndex];
+            point.x = canvasX;
+            point.y = canvasY;
+            redrawCanvas();
+            if (currentImage) {
+                saveCoordinates(currentImage, coordinates);
+            }
+        }
+
+        function syncVirtualMouseWithSelectedPoint() {
+            const panel = document.getElementById('virtualMousePanel');
+            const cursor = document.getElementById('virtualMouseCursor');
+            if (!panel || !cursor) return;
+
+            const rect = panel.getBoundingClientRect();
+            const cursorSize = 14;
+
+            let panelX, panelY;
+            if (selectedIndex === -1) {
+                // 선택된 점이 없으면 패널 중앙으로
+                panelX = rect.width / 2;
+                panelY = rect.height / 2;
+            } else {
+                const point = coordinates[selectedIndex];
+                panelX = (point.x / canvas.width) * rect.width;
+                panelY = (point.y / canvas.height) * rect.height;
+            }
+
+            cursor.style.left = `${panelX - cursorSize / 2}px`;
+            cursor.style.top = `${panelY - cursorSize / 2}px`;
+        }
+
+        function goBack() {
+            canvas.style.display = 'none';
+            document.querySelector('.controls').style.display = 'none';
+            document.getElementById('virtualMouseWrapper').style.display = 'none';
+            document.getElementById('imageList').style.display = 'flex';
+        }
+
+        async function loadCoordinates(image) {
+            try {
+                const response = await fetch(`/coordinates/${encodeURIComponent(image)}`);
+                if (response.ok) {
+                    return await response.json();
+                }
+            } catch (e) {
+                alert('좌표 로드 실패: ' + e.message);
+                console.error('Load failed', e);
+            }
+            return [];
+        }
+
+        async function saveCoordinates(image, coords) {
+            try {
+                await fetch(`/coordinates/${encodeURIComponent(image)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(coords)
+                });
+            } catch (e) {
+                alert('좌표 저장 실패: ' + e.message);
+                console.error('Save failed', e);
+            }
+        }
+
+        async function clearAllCoordinates() {
+            if (!confirm('모든 그린의 좌표를 초기화하시겠습니까?')) {
+                return;
+            }
+            try {
+                // 한 번에 여러 요청을 보내면 SQLite에서 락이 걸릴 수 있으므로
+                // 순차적으로 하나씩 저장하도록 변경
+                for (const file of imageFiles) {
+                    await saveCoordinates(file, []);
+                }
+                // 현재 화면에 열려 있는 좌표도 초기화
+                coordinates.length = 0;
+                selectedIndex = -1;
+                redrawCanvas();
+                alert('모든 그린 좌표가 초기화되었습니다.');
+            } catch (e) {
+                alert('전체 초기화 실패: ' + e.message);
+                console.error('Clear all failed', e);
+            }
+        }
+
+        function createImageList() {
+            const listDiv = document.getElementById('imageList');
+            const aspects = [];
+            let loadedCount = 0;
+
+            imageFiles.forEach((file, index) => {
+                const container = document.createElement('div');
+                container.style.position = 'relative';
+                container.style.display = 'inline-block';
+                container.style.margin = '10px';
+
+                const imgElement = document.createElement('img');
+                imgElement.src = `image/${file}`;
+                imgElement.onload = () => {
+                    const aspect = imgElement.naturalWidth / imgElement.naturalHeight;
+                    aspects[index] = aspect;
+                    loadedCount++;
+                    if (loadedCount === imageFiles.length) {
+                        const maxAspect = Math.max(...aspects);
+                        imageFiles.forEach((file, i) => {
+                            const img = listDiv.children[i].querySelector('img');
+                            img.style.aspectRatio = maxAspect;
+                        });
+                    }
+                };
+                imgElement.style.width = 'auto';
+                imgElement.style.height = '80px';
+                imgElement.style.objectFit = 'contain';
+                imgElement.style.border = '2px solid #ddd';
+                imgElement.style.borderRadius = '8px';
+                imgElement.style.cursor = 'pointer';
+                imgElement.style.transition = 'border-color 0.3s';
+                imgElement.onmouseover = () => imgElement.style.borderColor = '#2d5016';
+                imgElement.onmouseout = () => imgElement.style.borderColor = '#ddd';
+                imgElement.onclick = async () => {
+                    // 현재 좌표 저장
+                    if (currentImage) {
+                        await saveCoordinates(currentImage, coordinates);
+                    }
+                    // 새 이미지 설정
+                    currentImage = file;
+                    img.src = `image/${file}`;
+                    img.onload = () => {
+                        loadCoordinates(file).then(coords => {
+                            coordinates.length = 0;
+                            coordinates.push(...coords);
+                            selectedIndex = -1;
+                            redrawCanvas();
+                            syncVirtualMouseWithSelectedPoint();
+                            // UI 전환
+                            document.getElementById('imageList').style.display = 'none';
+                            canvas.style.display = 'block';
+                            document.getElementById('virtualMouseWrapper').style.display = 'block';
+                            document.querySelector('.controls').style.display = 'flex';
+                        });
+                    };
+                };
+                container.appendChild(imgElement);
+
+                // 이름 추가 (이미지 위에 오버레이)
+                const nameElement = document.createElement('p');
+                const greenNumber = index + 1;
+                nameElement.textContent = index < 9 ? `Lake ${greenNumber}` : `Hill ${greenNumber}`;
+                nameElement.style.position = 'absolute';
+                nameElement.style.top = '5px';
+                nameElement.style.left = '50%';
+                nameElement.style.transform = 'translateX(-50%)';
+                nameElement.style.color = 'white';
+                nameElement.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+                nameElement.style.padding = '2px 5px';
+                nameElement.style.borderRadius = '4px';
+                nameElement.style.fontSize = '12px';
+                nameElement.style.fontWeight = 'bold';
+                nameElement.style.margin = '0';
+                container.appendChild(nameElement);
+
+                listDiv.appendChild(container);
+            });
+        }
+
+        createImageList();
+        initVirtualMousePanel();
+    </script>
+</body>
+</html>
