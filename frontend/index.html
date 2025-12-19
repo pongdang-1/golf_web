@@ -7,15 +7,17 @@
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
-    <h1>⛳ 골프 그린 좌표 표시</h1>
+    <div class="title-wrapper">
+        <button class="nav-button prev-nav" onclick="goPrevGreen()" style="display: none;">◀ 이전</button>
+        <h1>⛳ 골프 그린 좌표 표시</h1>
+        <button class="nav-button next-nav" onclick="goNextGreen()" style="display: none;">다음 ▶</button>
+    </div>
     <div id="clearAllWrapper" style="margin-bottom: 10px;">
         <button onclick="clearAllCoordinates()">전체 초기화</button>
     </div>
     <div id="imageList"></div>
     <div id="canvasWrapper" class="canvas-wrapper" style="display: none;">
-        <button class="nav-button prev-nav" onclick="goPrevGreen()">◀ 이전</button>
         <canvas id="greenCanvas" width="600" height="400"></canvas>
-        <button class="nav-button next-nav" onclick="goNextGreen()">다음 ▶</button>
     </div>
     <!-- 가상 마우스 패널: 사진(캔버스) 바로 아래 -->
     <div id="virtualMouseWrapper" class="virtual-mouse-wrapper">
@@ -310,6 +312,9 @@
             document.getElementById('canvasWrapper').style.display = 'none';
             document.getElementById('imageList').style.display = 'flex';
             document.getElementById('clearAllWrapper').style.display = 'block';
+            // 타이틀 양옆 버튼 숨기기
+            document.querySelector('.prev-nav').style.display = 'none';
+            document.querySelector('.next-nav').style.display = 'none';
             selectedIndex = -1;
             updateSelectedPointInfo();
         }
@@ -391,6 +396,9 @@
                         canvas.style.display = 'block';
                         document.getElementById('virtualMouseWrapper').style.display = 'block';
                         document.querySelector('.controls').style.display = 'flex';
+                        // 타이틀 양옆 버튼 표시
+                        document.querySelector('.prev-nav').style.display = 'block';
+                        document.querySelector('.next-nav').style.display = 'block';
                     });
                 };
             })();
