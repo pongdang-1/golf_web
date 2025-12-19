@@ -117,8 +117,19 @@
 
         async function deleteSelectedPoint() {
             if (selectedIndex !== -1) {
+                const deletedIndex = selectedIndex;
                 coordinates.splice(selectedIndex, 1);
-                selectedIndex = -1;
+                
+                // 삭제 후 자동으로 이전 점 선택
+                if (coordinates.length > 0) {
+                    // 삭제된 점이 첫 번째였으면, 삭제 후 첫 번째 점 선택
+                    // 그 외에는 이전 점(인덱스가 하나 작은) 선택
+                    selectedIndex = deletedIndex === 0 ? 0 : deletedIndex - 1;
+                } else {
+                    // 점이 모두 삭제되었으면 선택 해제
+                    selectedIndex = -1;
+                }
+                
                 redrawCanvas();
                 syncVirtualMouseWithSelectedPoint();
                 updateSelectedPointInfo();
@@ -529,7 +540,7 @@
             const x = Math.round(p.x);
             const y = Math.round(p.y);
             const order = selectedIndex + 1;
-            infoDiv.textContent = `이미지: ${currentImage} | 순서: ${order}번 | 좌표: (${x}, ${y}) | 생성 날짜: ${created}`;
+            infoDiv.textContent = `순서: ${order}번 | 좌표: (${x}, ${y}) | 생성 날짜: ${created}`;
         }
 
         createImageList();
