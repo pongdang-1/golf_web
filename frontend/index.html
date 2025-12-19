@@ -34,6 +34,8 @@
         </div>
         <!-- 조이스틱 제거, 가상 마우스 패널은 캔버스 아래로 이동 -->
     </div>
+    <!-- 선택된 점 정보 표시 영역 (그린 화면에서만 표시) -->
+    <div id="pointInfo" class="point-info"></div>
     
     <script>
         const canvas = document.getElementById('greenCanvas');
@@ -51,8 +53,9 @@
             const x = (e.clientX - rect.left) * scaleX;
             const y = (e.clientY - rect.top) * scaleY;
             selectedIndex = getPointIndex(x, y);
-                redrawCanvas();
+            redrawCanvas();
             syncVirtualMouseWithSelectedPoint();
+            updateSelectedPointInfo();
         });
 
         function getPointIndex(x, y) {
@@ -76,22 +79,14 @@
             ctx.arc(x, y, r, 0, Math.PI * 2);
             ctx.fill();
 
-            // 텍스트 스타일
+            // 점 위에 순서 숫자만 표시
             ctx.fillStyle = '#000000';
             ctx.font = '12px Arial';
             const originalAlign = ctx.textAlign;
             const originalBaseline = ctx.textBaseline;
             ctx.textAlign = 'center';
-
-            // 위: 좌표 텍스트 (점 크기에 맞춰 위로 띄우기)
             ctx.textBaseline = 'bottom';
-            ctx.fillText(`(${Math.round(x)}, ${Math.round(y)})`, x, y - r - 4);
-
-            // 아래: 순서 번호 텍스트 (점 크기에 맞춰 아래로 띄우기)
-            ctx.textBaseline = 'top';
-            ctx.fillText(`${index + 1}`, x, y + r + 4);
-
-            // 원래 설정 복원
+            ctx.fillText(`${index + 1}`, x, y - r - 4);
             ctx.textAlign = originalAlign;
             ctx.textBaseline = originalBaseline;
         }
@@ -111,6 +106,7 @@
             selectedIndex = -1;
             redrawCanvas();
             syncVirtualMouseWithSelectedPoint();
+            updateSelectedPointInfo();
             // 초기화 시 DB에도 즉시 반영
             if (currentImage) {
                 await saveCoordinates(currentImage, coordinates);
@@ -123,6 +119,7 @@
                 selectedIndex = -1;
                 redrawCanvas();
                 syncVirtualMouseWithSelectedPoint();
+                updateSelectedPointInfo();
                 // 선택된 점 삭제 후 DB에도 즉시 반영
                 if (currentImage) {
                     await saveCoordinates(currentImage, coordinates);
@@ -137,11 +134,13 @@
             }
             const centerX = canvas.width / 2;
             const centerY = canvas.height / 2;
-            coordinates.push({ x: centerX, y: centerY });
+            const createdAt = new Date().toISOString();
+            coordinates.push({ x: centerX, y: centerY, createdAt });
             // 방금 생성된 점을 자동 선택
             selectedIndex = coordinates.length - 1;
             redrawCanvas();
             syncVirtualMouseWithSelectedPoint();
+            updateSelectedPointInfo();
             if (currentImage) {
                 saveCoordinates(currentImage, coordinates);
             }
@@ -159,6 +158,7 @@
             point.y = newY;
             redrawCanvas();
             syncVirtualMouseWithSelectedPoint();
+            updateSelectedPointInfo();
             if (currentImage) {
                 saveCoordinates(currentImage, coordinates);
             }
@@ -274,6 +274,7 @@
             redrawCanvas();
 
             // 손을 놓았을 때만 서버에 저장
+            updateSelectedPointInfo();
             if (shouldSave && currentImage) {
                 saveCoordinates(currentImage, coordinates);
             }
@@ -309,6 +310,8 @@
             document.getElementById('canvasWrapper').style.display = 'none';
             document.getElementById('imageList').style.display = 'flex';
             document.getElementById('clearAllWrapper').style.display = 'block';
+            selectedIndex = -1;
+            updateSelectedPointInfo();
         }
 
         async function loadCoordinates(image) {
@@ -351,6 +354,7 @@
                 coordinates.length = 0;
                 selectedIndex = -1;
                 redrawCanvas();
+                updateSelectedPointInfo();
                 alert('모든 그린 좌표가 초기화되었습니다.');
             } catch (e) {
                 alert('전체 초기화 실패: ' + e.message);
@@ -374,10 +378,12 @@
                 img.onload = () => {
                     loadCoordinates(file).then(coords => {
                         coordinates.length = 0;
+                        // 기존 데이터에 createdAt이 없을 수 있으므로 그대로 넣되, 표시 시에만 처리
                         coordinates.push(...coords);
                         selectedIndex = -1;
                         redrawCanvas();
                         syncVirtualMouseWithSelectedPoint();
+                        updateSelectedPointInfo();
                         // UI 전환
                         document.getElementById('imageList').style.display = 'none';
                         document.getElementById('clearAllWrapper').style.display = 'none';
@@ -472,6 +478,50 @@
 
             listDiv.appendChild(lakeGrid);
             listDiv.appendChild(hillGrid);
+        }
+
+        function formatDateTime(iso) {
+            if (!iso) return '-';
+            try {
+                const d = new Date(iso);
+                if (isNaN(d.getTime())) return '-';
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const hh = String(d.getHours()).padStart(2, '0');
+                const mm = String(d.getMinutes()).padStart(2, '0');
+                const ss = String(d.getSeconds()).padStart(2, '0');
+                return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+            } catch {
+                return '-';
+            }
+        }
+
+        function updateSelectedPointInfo() {
+            const infoDiv = document.getElementById('pointInfo');
+            if (!infoDiv) return;
+
+            // 리스트 화면에서는 숨김
+            if (!currentImage) {
+                infoDiv.style.display = 'none';
+                infoDiv.textContent = '';
+                return;
+            }
+
+            // 그린 화면에서는 표시
+            infoDiv.style.display = 'block';
+
+            if (selectedIndex === -1 || !coordinates[selectedIndex]) {
+                infoDiv.textContent = '선택된 점이 없습니다.';
+                return;
+            }
+
+            const p = coordinates[selectedIndex];
+            const created = formatDateTime(p.createdAt);
+            const x = Math.round(p.x);
+            const y = Math.round(p.y);
+            const order = selectedIndex + 1;
+            infoDiv.textContent = `이미지: ${currentImage} | 순서: ${order}번 | 좌표: (${x}, ${y}) | 생성 날짜: ${created}`;
         }
 
         createImageList();

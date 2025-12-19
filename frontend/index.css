@@ -101,6 +101,13 @@ canvas {
     width: 100%;
     max-width: 600px;
 }
+.point-info {
+    width: 100%;
+    max-width: 600px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: #333;
+}
 .info {
     margin: 10px 0;
     font-size: 14px;
